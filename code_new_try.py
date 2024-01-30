@@ -6,6 +6,7 @@ Created on Tue Jan 30 15:51:45 2024
 """
 
 import pulp
+from itertools import permutations
 #from itertools import product
 
 # Constants
@@ -41,26 +42,21 @@ best_objective = float('inf')
 best_fuels = None
 
 # ... (Your imports and constant definitions)
+# Decision Variables - value will start from 0
+G = pulp.LpVariable.dicts("Generation", [(t, u) for t in years for u in units],0)  # G represents the amount of energy (heat) produced by each unit u
+CAP = pulp.LpVariable.dicts("Installed_Capacity", [(t, u) for t in years for u in units],0)  # X represents the installed capacity (how much heat is already produced by each unit u)
+F = pulp.LpVariable.dicts("Fuel_Consumption", [(t, f) for t in years for f in fuels],0)  # F represents amount of fuel needed (given as input to each unit u)to operate
 
 # Integer Linear Programming
-for t, i in zip(years, range(len(D))):
+for i, t in enumerate(years):
     for u, f in zip(units, fuels):
-        for fuel_combination in [(fuel1, fuel2) for fuel1 in fuels for fuel2 in fuels if
-                                         fuel1 != fuel2]:  # optimization for best fuels to find out which fuel/ more than one fuels is best suited to get the minimum value Z
+        for fuel_combination in permutations(fuels, 2):  # optimization for best fuels to find out which fuel/ more than one fuels is best suited to get the minimum value Z
             prb = pulp.LpProblem(f"Optimization_for_{fuel_combination[0]}_{fuel_combination[1]}",
                                          pulp.LpMinimize)
 
-            # Decision Variables - value will start from 0
-            G = pulp.LpVariable.dicts("Generation", [(t, u) for t in years for u in units],
-                                              0)  # G represents the amount of energy (heat) produced by each unit u
-            X = pulp.LpVariable.dicts("Installed_Capacity", [(t, u) for t in years for u in units],
-                                              0)  # X represents the installed capacity (how much heat is already produced by each unit u)
-            F = pulp.LpVariable.dicts("Fuel_Consumption", [(t, f) for t in years for f in fuels],
-                                              0)  # F represents amount of fuel needed (given as input to each unit u)to operate
-
             # Objective Function - minimize the total system cost
             prb += pulp.lpSum([C_op[u] * G[t, u] for t in years for u in units] +
-                                      [C_inv[u] * X[t, u] for t in years for u in units] +
+                                      [C_inv[u] * CAP[t, u] for t in years for u in units] +
                                       [C_f[f] * F[t, f] for t in years for f in fuels]), "TotalCost"
 
             # Balance Equation - total generation of heat by each unit will be equal to 20% of demand of that pa
@@ -68,11 +64,11 @@ for t, i in zip(years, range(len(D))):
 
             # Constraints
             # Capacity Constraint - The generated heat from each unit does not exceed the already installed capacity for that unit
-            prb += G[t, u] <= X[t, u]
+            prb += G[t, u] <= CAP[t, u]
 
             # Capacity Boundary Constraint - Increment of X[u] by x[u] every 5 years
-            prb += X[t, u] <= X[t, u] + x[u]
-            prb += X[t, u] + x[u] <= X_max[u]
+            prb += CAP[t, u] <= CAP[t, u] + X[u]
+            prb += CAP[t, u] + X[u] <= X_max[u]
 
 
             # print(G[t, 'power_plant'])
@@ -86,7 +82,7 @@ for t, i in zip(years, range(len(D))):
 
             # Non-negative Constraint - decision variables are non-negative
             prb += G[t, u] >= 0
-            prb += X[t, u] >= 0
+            prb += CAP[t, u] >= 0
             prb += F[t, f] >= 0
             
             #prb += G[t, 'power_plant'] > 0
