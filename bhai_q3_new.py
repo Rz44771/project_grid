@@ -1,12 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Feb  1 18:08:07 2024
-
-@author: roksa
-"""
-
 import pulp
-from itertools import permutations
+from itertools import combinations
 
 # ============================= Constants ==========================================================
 # Considering the years from 2025 to 2045 with 5 years leap
@@ -25,6 +18,13 @@ fuels = [
     'green_hydrogen',
     'synthetic_gas'
 ]
+
+# Coefficient of performance of the fuels (fuel efficiency)
+unit_fuels = {
+    'power_plant': 'electricity',  # cop of heat pumps
+    'hydrogen_plant': 'green_hydrogen',  # cop of gas boilers
+    'gas_plant': 'synthetic_gas'
+}
 
 # Coefficient of performance of the fuels (fuel efficiency)
 COP = {
@@ -89,10 +89,8 @@ D = [
 
 a = 0
 best_objective = float('inf')
+objective_values = None
 best_fuels = None
-
-# Lp Problem for Cost Optimization
-prb = pulp.LpProblem(f"Optimization_for_", pulp.LpMinimize)
 
 # ============================== Decision Variables - value will start from 0 ===============================
 # G represents the amount of energy (heat) produced by each unit u
@@ -111,86 +109,91 @@ F = pulp.LpVariable.dicts("Fuel_Consumption", [(t, f) for t in years for f in fu
                           lowBound=0,
                           cat='Continuous')
 
-# Objective Function - minimize the total system cost
-prb += pulp.lpSum([C_op[u] * G[t, u] for t in years for u in units]
-                  + [C_inv[u] * CAP[t, u] for t in years for u in units]
-                  + [C_f[f] * F[t, f] for t in years for f in fuels]), "TotalCost"
+# Plant selection variable
+FUEL_SEL = pulp.LpVariable.dicts("Fuel_Selection", fuels, cat='Binary')
 
 
-# Constraints
-for year in years:
-    a = 0.2+a
-    # Constraint 1 - Balance Equation: Total generation of heat by each unit is equal to 20% of demand
-    prb += pulp.lpSum(G[i, j] for i in years for j in units) == a * D[years.index(year)]
+# Linear programming
+for fuel_combination in combinations(fuels, 2):
 
-    for unit in units:
-        # Constraint 2: Generated heat does not exceed already installed capacity
-        prb += G[year, unit] <= CAP[year, unit]
+    # Lp Problem for Cost Optimization
+    prb = pulp.LpProblem(f"Optimization_for_{fuel_combination}", pulp.LpMinimize)
 
-        # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
-        if year % 5 == 0:
-            prb += CAP[year, unit] <= CAP[year, unit] + x[unit]
-            prb += CAP[year, unit] + x[unit] <= X_max[unit]
+    # Objective Function - minimize the total system cost
+    prb += pulp.lpSum([C_op[u] * G[t, u] for t in years for u in units]
+                      + [C_inv[u] * CAP[t, u] for t in years for u in units]
+                      + [C_f[f] * F[t, f] for t in years for f in fuels]), "TotalCost"
 
-        # ---------- From Online ------------------------------
-        # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
-        # Option - 1
-        # for i in range(len(years) - 1):
-        #     prb += X[year, unit] + x[unit] * (years[i + 1] - 2025) == X[year, unit] + x[unit] * (years[i] - 2025)
+    # Constraint: Choose exactly two power fuels
+    prb += pulp.lpSum(FUEL_SEL[fuel] for fuel in fuel_combination) == 2
 
-        # Option - 2
-        # if year % 5 == 0:
-        #     prb += X[unit] + x[unit] * (year - 2025) == X_max[unit]
+    for year in years:
+        a = 0.2+a
+        # Constraint 1 - Balance Equation: Total generation of heat by each unit is equal to 20% of demand
+        prb += pulp.lpSum(G[i, j] for i in years for j in units) == a * D[years.index(year)]
 
-        # Fuel Consumption Constraint - Fuel consumption is linked to the generation by the fuel efficiency
-        prb += F[year, 'electricity'] == pulp.LpAffineExpression([(G[year, 'power_plant'], 1 / COP['electricity'])])
-        prb += F[year, 'green_hydrogen'] == pulp.LpAffineExpression([(G[year, 'hydrogen_plant'], 1 / COP['green_hydrogen'])])
-        prb += F[year, 'synthetic_gas'] == pulp.LpAffineExpression([(G[year, 'gas_plant'], 1 / COP['synthetic_gas'])])
+        for unit in units:
+            # Constraint 2: Generated heat does not exceed already installed capacity
+            prb += G[year, unit] <= CAP[year, unit]
 
-        # Non-negative Constraint - decision variables are non-negative
-        prb += G[year, unit] >= 0
-        prb += CAP[year, unit] >= 0
+            # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
+            if year % 5 == 0:
+                prb += CAP[year, unit] <= CAP[year, unit] + x[unit]
+                prb += CAP[year, unit] + x[unit] * (year - 2025) <= X_max[unit]
 
-        for fuel in fuels:
-            prb += F[year, fuel] >= 0
+            # ---------- From Online ------------------------------
+            # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
+            # Option - 1
+            # for i in range(len(years) - 1):
+            #     prb += X[year, unit] + x[unit] * (years[i + 1] - 2025) == X[year, unit] + x[unit] * (years[i] - 2025)
 
-            prb.solve(pulp.GUROBI())
+            # Option - 2
+            # if year % 5 == 0:
+            #     prb += X[unit] + x[unit] * (year - 2025) == X_max[unit]
 
-            if prb.status == pulp.LpStatusOptimal:
-                if pulp.value(prb.objective) < best_objective:
-                    best_objective = pulp.value(prb.objective)
-                    best_fuel = fuel
+            # Fuel Consumption Constraint - Fuel consumption is linked to the generation by the fuel efficiency
+            prb += F[year, 'electricity'] == pulp.LpAffineExpression([(G[year, 'power_plant'], 1 / COP['electricity'])])
+            prb += F[year, 'green_hydrogen'] == pulp.LpAffineExpression([(G[year, 'hydrogen_plant'], 1 / COP['green_hydrogen'])])
+            prb += F[year, 'synthetic_gas'] == pulp.LpAffineExpression([(G[year, 'gas_plant'], 1 / COP['synthetic_gas'])])
+
+            # Non-negative Constraint - decision variables are non-negative
+            prb += G[year, unit] >= 0
+            prb += CAP[year, unit] >= 0
+
+            for fuel in fuels:
+                prb += F[year, fuel] >= 0
+
+                prb.solve(pulp.GUROBI())
+
+                if prb.status == pulp.LpStatusOptimal:
+                    if pulp.value(prb.objective) < best_objective:
+                        best_objective = pulp.value(prb.objective)
+                        best_fuels = fuel_combination
 
 
 # Optimization
 # prb.solve(pulp.GUROBI())
 
-# Displaying the results
-print("Optimal solution:")
-for v in prb.variables():
-    print(f"{v.name}: {v.varValue}")
+
+print(f"The optimal fuel combination for minimizing cost is: {best_fuels}")
+print(f"Optimal Value of Z when using {best_fuels}:", best_objective)
+print(objective_values)
 
 print("=================Minimum Costs===========================================================")
 # Extracting the optimal values of decision variables
 optimal_fuel_values = {(unit, year): G[year, unit].varValue for year in years for unit in units }
 print(optimal_fuel_values)
 
-# Sorting fuels by their costs
-sorted_fuels = sorted(C_f.keys(), key=lambda fuel: C_f[fuel])
-
-# Selecting the two cheapest fuels
-cheapest_fuels = sorted_fuels[:2]
-
 # Calculating the total heat produced by the two cheapest fuels
 total_heat_produced = 0
 for unit in units:
     heat_produced = 0
-    for fuel in cheapest_fuels:
+    for fuel in best_fuels:
         for year in years:
             heat_produced += COP[fuel] * optimal_fuel_values[unit, year]
             total_heat_produced += heat_produced
     print(f"Heat Produced by {unit}: {heat_produced}")
 
 # Displaying the results
-print("Cheapest Fuels:", cheapest_fuels)
+print("Cheapest Fuels:", best_fuels)
 print("Total Heat Produced by the Two Cheapest Fuels:", total_heat_produced)
