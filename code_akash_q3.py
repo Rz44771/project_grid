@@ -118,8 +118,19 @@ for year in years:
         prb += G[year, unit] <= CAP[year, unit]
 
         # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
-        prb += CAP[year, unit] <= CAP[year, unit] + X[unit]
-        prb += CAP[year, unit] + X[unit] <= X_max[unit]
+        if year % 5 == 0:
+            prb += CAP[year, unit] <= CAP[year, unit] + X[unit]
+            prb += CAP[year, unit] + X[unit] <= X_max[unit]
+
+        # ---------- From Online ------------------------------
+        # Constraint 3 - Capacity Boundary Constraint: Increment of X[u] by x[u] every 5 years
+        # Option - 1
+        # for i in range(len(years) - 1):
+        #     prb += X[year, unit] + x[unit] * (years[i + 1] - 2025) == X[year, unit] + x[unit] * (years[i] - 2025)
+
+        # Option - 2
+        # if year % 5 == 0:
+        #     prb += X[unit] + x[unit] * (year - 2025) == X_max[unit]
 
         # Fuel Consumption Constraint - Fuel consumption is linked to the generation by the fuel efficiency
         prb += F[year, 'electricity'] == pulp.LpAffineExpression([(G[year, 'power_plant'], 1 / COP['electricity'])])
