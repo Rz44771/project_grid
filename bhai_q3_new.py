@@ -133,7 +133,7 @@ for fuel_combination in combinations(fuels, 2):
         for f1, u1 in unit_fuels.items():
             for f2, u2 in unit_fuels.items():
                 if f1 != f2:
-                    prb += pulp.lpSum(G[year, u1, f1] + G[year, u2, f2]) >= a * D[years.index(year)] + D[years.index(year)]
+                    prb += pulp.lpSum(G[year, u1, f1] + G[year, u2, f2]) >= a * D[years.index(year)]
 
         # prb += pulp.lpSum(G[i, j, f] for i in years for f, j in unit_fuels.items()) >= a * D[years.index(year)] + D[years.index(year)]
 
