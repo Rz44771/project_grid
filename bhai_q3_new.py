@@ -130,7 +130,10 @@ for fuel_combination in combinations(fuels, 2):
     for year in years:
         a = 0.2+a
         # Constraint 1 - Balance Equation: Total generation of heat by each unit is equal to 20% of demand
-        prb += pulp.lpSum(G[year, j, f] for f, j in unit_fuels.items()) >= a * D[years.index(year)] + D[years.index(year)]
+        for f1, u1 in unit_fuels.items():
+            for f2, u2 in unit_fuels.items():
+                if f1 != f2:
+                    prb += pulp.lpSum(G[year, u1, f1] + G[year, u2, f2]) >= a * D[years.index(year)] + D[years.index(year)]
 
         # prb += pulp.lpSum(G[i, j, f] for i in years for f, j in unit_fuels.items()) >= a * D[years.index(year)] + D[years.index(year)]
 
@@ -168,12 +171,12 @@ for fuel_combination in combinations(fuels, 2):
 # Optimization
 # prb.solve(pulp.GUROBI())
 
-
+print("=========== Minimum Cost ======================")
 print(f"The optimal fuel combination for minimizing cost is: {best_fuels}")
 print(f"Optimal Value of Z when using {best_fuels}:", best_objective)
 print(objective_values)
 
-print("=================Minimum Costs===========================================================")
+print("============= Individual Heat Production ======================")
 # Extracting the optimal values of decision variables
 optimal_fuel_values = {(unit, fuel, year): G[year, unit, fuel].varValue for year in years for unit in units for fuel in fuels}
 print(optimal_fuel_values)
